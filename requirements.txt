@@ -1,0 +1,4 @@
+aiosmtpd>=1.4.6
+dkimpy>=1.1.7
+dnspython>=2.6.1
+pyyaml>=6.0
