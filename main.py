@@ -166,7 +166,7 @@ def make_authenticator(password: str):
                 log.info(f"auth via namedtuple login={login!r}")
                 if pwd == password:
                     log.info("auth ok (namedtuple)")
-                    return AuthResult(success=True)
+                    return AuthResult(success=True, auth_data=login or "user")
                 log.warning(f"auth failed wrong password got={pwd!r} expected={password!r}")
                 return AuthResult(success=False, handled=True)
             # fallback: raw bytes \x00user\x00pass
@@ -176,7 +176,7 @@ def make_authenticator(password: str):
                 pwd = parts[2] if len(parts) >= 3 else parts[1]
                 if pwd.decode() == password:
                     log.info("auth ok (bytes)")
-                    return AuthResult(success=True)
+                    return AuthResult(success=True, auth_data="user")
                 log.warning("auth failed wrong password (bytes)")
                 return AuthResult(success=False, handled=True)
             # fallback: base64 string
@@ -187,7 +187,7 @@ def make_authenticator(password: str):
                 pwd = parts[2] if len(parts) >= 3 else parts[1]
                 if pwd.decode() == password:
                     log.info("auth ok (b64 str)")
-                    return AuthResult(success=True)
+                    return AuthResult(success=True, auth_data="user")
                 log.warning("auth failed wrong password (b64 str)")
                 return AuthResult(success=False, handled=True)
             log.warning(f"auth failed unhandled type {type(auth_data)!r}")
