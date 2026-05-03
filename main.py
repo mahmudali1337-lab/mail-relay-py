@@ -153,29 +153,46 @@ class SMTPHandler:
 
 def make_authenticator(password: str):
     async def authenticator(server, session, envelope, mechanism, auth_data):
+        log.info(f"auth attempt mechanism={mechanism} type={type(auth_data).__name__} repr={auth_data!r}")
         try:
-            # aiosmtpd 1.4.x passes LoginPassword namedtuple for PLAIN/LOGIN
-            if isinstance(auth_data, LoginPassword):
+            # aiosmtpd 1.4.x: LoginPassword namedtuple with .login and .password
+            if hasattr(auth_data, "password"):
                 pwd = auth_data.password
                 if isinstance(pwd, bytes):
                     pwd = pwd.decode()
+                login = getattr(auth_data, "login", b"")
+                if isinstance(login, bytes):
+                    login = login.decode()
+                log.info(f"auth via namedtuple login={login!r}")
                 if pwd == password:
-                    log.info(f"auth ok mechanism={mechanism}")
+                    log.info("auth ok (namedtuple)")
                     return AuthResult(success=True)
-                log.warning(f"auth failed mechanism={mechanism} wrong password")
+                log.warning(f"auth failed wrong password got={pwd!r} expected={password!r}")
                 return AuthResult(success=False, handled=True)
-            # fallback: raw bytes (older aiosmtpd or PLAIN inline)
-            if isinstance(auth_data, str):
-                auth_data = base64.b64decode(auth_data)
+            # fallback: raw bytes \x00user\x00pass
             if isinstance(auth_data, (bytes, bytearray)):
                 parts = auth_data.split(b"\x00")
+                log.info(f"auth via bytes parts={len(parts)}")
                 pwd = parts[2] if len(parts) >= 3 else parts[1]
                 if pwd.decode() == password:
-                    log.info(f"auth ok mechanism={mechanism} (raw)")
+                    log.info("auth ok (bytes)")
                     return AuthResult(success=True)
-            log.warning(f"auth failed mechanism={mechanism} unhandled type {type(auth_data)}")
+                log.warning("auth failed wrong password (bytes)")
+                return AuthResult(success=False, handled=True)
+            # fallback: base64 string
+            if isinstance(auth_data, str):
+                raw = base64.b64decode(auth_data)
+                parts = raw.split(b"\x00")
+                log.info(f"auth via b64 str parts={len(parts)}")
+                pwd = parts[2] if len(parts) >= 3 else parts[1]
+                if pwd.decode() == password:
+                    log.info("auth ok (b64 str)")
+                    return AuthResult(success=True)
+                log.warning("auth failed wrong password (b64 str)")
+                return AuthResult(success=False, handled=True)
+            log.warning(f"auth failed unhandled type {type(auth_data)!r}")
         except Exception as e:
-            log.error(f"auth error: {e}")
+            log.error(f"auth error: {e}", exc_info=True)
         return AuthResult(success=False, handled=True)
 
     return authenticator
