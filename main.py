@@ -14,7 +14,7 @@ import dkim
 import dns.resolver
 import yaml
 from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import AuthResult, LoginPassword
+from aiosmtpd.smtp import SMTP, AuthResult, LoginPassword
 
 logging.basicConfig(
     level=logging.INFO,
@@ -221,14 +221,21 @@ def main():
     handler = SMTPHandler(cfg)
     auth_fn = make_authenticator(password)
 
-    controller = Controller(
+    class AuthController(Controller):
+        def factory(self):
+            return SMTP(
+                self.handler,
+                hostname=hostname,
+                auth_required=True,
+                auth_require_tls=False,
+                authenticator=auth_fn,
+            )
+
+    controller = AuthController(
         handler,
         hostname=host,
         port=port,
         server_hostname=hostname,
-        auth_required=True,
-        auth_require_tls=False,
-        authenticator=auth_fn,
     )
 
     for _ in range(workers_count):
