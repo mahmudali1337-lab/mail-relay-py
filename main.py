@@ -14,7 +14,7 @@ import dkim
 import dns.resolver
 import yaml
 from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import AuthResult
+from aiosmtpd.smtp import AuthResult, LoginPassword
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,15 +153,27 @@ class SMTPHandler:
 
 def make_authenticator(password: str):
     async def authenticator(server, session, envelope, mechanism, auth_data):
-        if mechanism != "PLAIN":
-            return AuthResult(success=False, handled=True)
         try:
+            # aiosmtpd 1.4.x passes LoginPassword namedtuple for PLAIN/LOGIN
+            if isinstance(auth_data, LoginPassword):
+                pwd = auth_data.password
+                if isinstance(pwd, bytes):
+                    pwd = pwd.decode()
+                if pwd == password:
+                    log.info(f"auth ok mechanism={mechanism}")
+                    return AuthResult(success=True)
+                log.warning(f"auth failed mechanism={mechanism} wrong password")
+                return AuthResult(success=False, handled=True)
+            # fallback: raw bytes (older aiosmtpd or PLAIN inline)
             if isinstance(auth_data, str):
-                auth_data = auth_data.encode()
-            parts = auth_data.split(b"\x00")
-            pwd = parts[2] if len(parts) >= 3 else parts[1]
-            if pwd.decode() == password:
-                return AuthResult(success=True)
+                auth_data = base64.b64decode(auth_data)
+            if isinstance(auth_data, (bytes, bytearray)):
+                parts = auth_data.split(b"\x00")
+                pwd = parts[2] if len(parts) >= 3 else parts[1]
+                if pwd.decode() == password:
+                    log.info(f"auth ok mechanism={mechanism} (raw)")
+                    return AuthResult(success=True)
+            log.warning(f"auth failed mechanism={mechanism} unhandled type {type(auth_data)}")
         except Exception as e:
             log.error(f"auth error: {e}")
         return AuthResult(success=False, handled=True)
